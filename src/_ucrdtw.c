@@ -1,3 +1,5 @@
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+
 #include <Python.h>
 #include <numpy/arrayobject.h>
 #include "ucrdtw.h"
@@ -57,11 +59,12 @@ verbose - Optional boolean to print stats
 static PyObject* ucrdtw_ucrdtw(PyObject* self, PyObject* args) {
     PyObject* data_obj = NULL;
     PyObject* query_obj = NULL;
+    PyObject* dnc_obj = NULL;
     double warp_width = -1;
     PyObject* verbose_obj = NULL;
 
     /* Parse the input tuple */
-    if (!PyArg_ParseTuple(args, "OOd|O", &data_obj, &query_obj, &warp_width, &verbose_obj)) {
+    if (!PyArg_ParseTuple(args, "OOd|OO", &data_obj, &query_obj, &warp_width, &verbose_obj, &dnc_obj)) {
         return NULL;
     }
 
@@ -70,7 +73,7 @@ static PyObject* ucrdtw_ucrdtw(PyObject* self, PyObject* args) {
         PyErr_SetString(PyExc_TypeError, "Data argument must be a list or ndarray");
         return NULL;
     }
-    PyObject* data_array = PyArray_FROM_OTF(data_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    PyArrayObject* data_array = (PyArrayObject*)PyArray_FROM_OTF(data_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
     if (data_array == NULL) {
         Py_XDECREF(data_array);
         PyErr_SetString(PyExc_TypeError, "Data argument must be a list or ndarray");
@@ -82,11 +85,26 @@ static PyObject* ucrdtw_ucrdtw(PyObject* self, PyObject* args) {
         PyErr_SetString(PyExc_TypeError, "Query argument must be a list or ndarray");
         return NULL;
     }
-    PyObject* query_array = PyArray_FROM_OTF(query_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    PyArrayObject* query_array = (PyArrayObject*)PyArray_FROM_OTF(query_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
     if (query_array == NULL) {
         Py_XDECREF(data_array);
         Py_XDECREF(query_array);
         PyErr_SetString(PyExc_TypeError, "Query argument must be a list or ndarray");
+        return NULL;
+    }
+
+    if (!PyList_Check(dnc_obj) && !PyArray_Check(dnc_obj)) {
+        Py_XDECREF(data_array);
+        Py_XDECREF(query_array);
+        PyErr_SetString(PyExc_TypeError, "DNC argument must be a list or ndarray");
+        return NULL;
+    }
+    PyArrayObject* dnc_array = (PyArrayObject*)PyArray_FROM_OTF(dnc_obj, NPY_INT, NPY_ARRAY_IN_ARRAY);
+    if (dnc_array == NULL) {
+        Py_XDECREF(data_array);
+        Py_XDECREF(query_array);
+        Py_XDECREF(dnc_array);
+        PyErr_SetString(PyExc_TypeError, "DNC argument must be a list or ndarray");
         return NULL;
     }
 
@@ -99,14 +117,17 @@ static PyObject* ucrdtw_ucrdtw(PyObject* self, PyObject* args) {
 
     int verbose = verbose_obj != NULL ? PyObject_IsTrue(verbose_obj) : 0;
 
+    int* dnc = (int*) PyArray_DATA(dnc_array);
+
     /* Call the external C function to compute the best DTW location and distance. */
     long long location = -1;
     double distance = -1;
-    int status = ucrdtw(data, data_size, query, query_size, warp_width, verbose, &location, &distance);
+    int status = ucrdtw(data, data_size, query, query_size, warp_width, verbose, &location, &distance, dnc);
 
     /* Clean up. */
     Py_XDECREF(data_array);
     Py_XDECREF(query_array);
+    Py_XDECREF(dnc_array);
 
     if (status) {
         PyErr_SetString(PyExc_RuntimeError, "ucrdtw could not allocate memory");
