@@ -598,7 +598,10 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
                 /// Start the task when there are more than m-1 points in the current chunk
                 if (i >= m - 1) {
 
-                    // if(!nc) { // 12.8M, m=1280, dnc=95%, execution time: 5.52 seconds
+                    /// compute the start location of the data in the current circular array, t
+                    j = (i + 1) % m;
+
+                    if(!nc) { // 12.8M, m=1280, dnc=95%, execution time: 5.52 seconds
 
                     mean = ex / m;
                     std = ex2 / m;
@@ -606,12 +609,10 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
 
                     // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
 
-                    /// compute the start location of the data in the current circular array, t
-                    j = (i + 1) % m;
                     /// the start location of the data in the current chunk
                     I = i - (m - 1);
 
-                    if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+                    // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
 
                         /// Use a constant lower bound to prune the obvious subsequence
                         lb_kim = lb_kim_hierarchy(t, q, j, m, mean, std, best_so_far);
