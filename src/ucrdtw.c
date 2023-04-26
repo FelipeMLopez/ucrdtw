@@ -366,7 +366,7 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
     int compute = 0;
 
     double d = 0.0;
-    int nc = 0.0;
+    int nc = 0;
     long long i, j;
     double ex, ex2, mean, std;
 
@@ -557,7 +557,7 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
                 buffer_dnc[k] = dnc[dnc_index++];
             }
         } else {
-            for (k = 0; k < m - 1; k++){
+            for (k = 0; k < m - 1; k++) {
                 buffer[k] = buffer[EPOCH - m + 1 + k];
                 buffer_dnc[k] = buffer_dnc[EPOCH - m + 1 + k];
             }
@@ -603,16 +603,12 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
 
                     if(!nc) { // 12.8M, m=1280, dnc=95%, execution time: 5.52 seconds
 
-                    mean = ex / m;
-                    std = ex2 / m;
-                    std = sqrt(std - mean * mean);
+                        mean = ex / m;
+                        std = ex2 / m;
+                        std = sqrt(std - mean * mean);
 
-                    // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
-
-                    /// the start location of the data in the current chunk
-                    I = i - (m - 1);
-
-                    // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+                        /// the start location of the data in the current chunk
+                        I = i - (m - 1);
 
                         /// Use a constant lower bound to prune the obvious subsequence
                         lb_kim = lb_kim_hierarchy(t, q, j, m, mean, std, best_so_far);
@@ -633,7 +629,6 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
                                 /// l_buff, u_buff are big envelope for all data in this chunk
                                 lb_k2 = lb_keogh_data_cumulative(order, tz, qo, cb2, l_buff + I, u_buff + I, m, mean, std, best_so_far);
                                 if (lb_k2 < best_so_far) {
-                                    // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
                                     /// Choose better lower bound between lb_keogh and lb_keogh2 to be used in early abandoning DTW
                                     /// Note that cb and cb2 will be cumulative summed here.
                                     if (lb_k > lb_k2) {
@@ -654,7 +649,6 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
                                         best_so_far = dist;
                                         loc = (it) * (EPOCH - m + 1) + i - m + 1;
                                     }
-                                    // } // DNC
                                 } else
                                     keogh2++;
                             } else
@@ -710,7 +704,7 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
         printf("Pruned by LB_Keogh  : %6.2f%%\n", ((double) keogh / i) * 100);
         printf("Pruned by LB_Keogh2 : %6.2f%%\n", ((double) keogh2 / i) * 100);
         printf("DTW Calculation     : %6.2f%%\n", 100 - (((double) kim + keogh + keogh2) / i * 100));
-        printf("COMPUTE1! DNC:%d%d%d%d%d\n", dnc[0], dnc[1], dnc[2], dnc[3], dnc[4]);
+        // printf("COMPUTE1! DNC:%d%d%d%d%d\n", dnc[0], dnc[1], dnc[2], dnc[3], dnc[4]);
     }
     *location = loc;
     *distance = sqrt(best_so_far);
@@ -731,7 +725,7 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
     int compute = 0;
 
     double d = 0.0;
-    int nc = 0.0;
+    int nc = 0;
     long long i, j, s, send;
     double ex, ex2, mean, std;
 
@@ -951,7 +945,6 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
                 for (s = i; s < send; s++) {
                     /// A bunch of data has been read and pick one of them at a time to use
                     d = buffer[s];
-                    nc = buffer_dnc[s];
 
                     /// Calcualte sum and sum square
                     ex += d;
@@ -966,21 +959,23 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
 
                 /// Start the task when there are more than m-1 points in the current chunk
                 if (i >= m - 1) {
-
-                    // if(!nc) { // 12.8M, m=1280, dnc=95%, execution time: 5.52 seconds
-
-                    mean = ex / m;
-                    std = ex2 / m;
-                    std = sqrt(std - mean * mean);
-
-                    // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+                    
+                    // find it we need to compute this epoch
+                    nc = buffer_dnc[i];
 
                     /// compute the start location of the data in the current circular array, t
-                    j = (i + 1) % m;
-                    /// the start location of the data in the current chunk
-                    I = i - (m - 1);
+                    j = (i + stride) % m;
 
                     if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+
+                        mean = ex / m;
+                        std = ex2 / m;
+                        std = sqrt(std - mean * mean);
+
+                        // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+
+                        /// the start location of the data in the current chunk
+                        I = i - (m - 1);
 
                         /// Use a constant lower bound to prune the obvious subsequence
                         lb_kim = lb_kim_hierarchy(t, q, j, m, mean, std, best_so_far);
@@ -1080,7 +1075,7 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
         printf("Pruned by LB_Keogh  : %6.2f%%\n", ((double) keogh / i) * 100);
         printf("Pruned by LB_Keogh2 : %6.2f%%\n", ((double) keogh2 / i) * 100);
         printf("DTW Calculation     : %6.2f%%\n", 100 - (((double) kim + keogh + keogh2) / i * 100));
-        printf("COMPUTE1! DNC:%d%d%d%d%d\n", dnc[0], dnc[1], dnc[2], dnc[3], dnc[4]);
+        // printf("COMPUTE1! DNC:%d%d%d%d%d\n", dnc[0], dnc[1], dnc[2], dnc[3], dnc[4]);
     }
     *location = loc;
     *distance = sqrt(best_so_far);
