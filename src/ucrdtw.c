@@ -717,6 +717,376 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
 }
 
 /// Calculate the nearest neighbor of a times series in a larger time series expressed as location and distance,
+/// using the UCR suite optimizations.
+int ucrdtw_stride(double* data, long long data_size, double* query, long query_size, double warp_width, int verbose, long long* location, double* distance, int* dnc, int stride) {
+    long m = query_size;
+    int r = warp_width <= 1 ? floor(warp_width * m) : floor(warp_width);
+
+    double best_so_far; /// best-so-far
+    double *q, *t; /// data array
+    int *order; ///new order of the query
+    double *u, *l, *qo, *uo, *lo, *tz, *cb, *cb1, *cb2, *u_d, *l_d;
+
+    int compute = 0;
+
+    double d = 0.0;
+    int nc = 0.0;
+    long long i, j, s, send;
+    double ex, ex2, mean, std;
+
+    long long loc = 0;
+    double t1, t2;
+    int kim = 0, keogh = 0, keogh2 = 0;
+    double dist = 0, lb_kim = 0, lb_k = 0, lb_k2 = 0;
+    double *buffer, *buffer_dnc, *u_buff, *l_buff;
+    index_t *q_tmp;
+
+    /// For every EPOCH points, all cumulative values, such as ex (sum), ex2 (sum square), will be restarted for reducing the floating point error.
+    int EPOCH = 100000;
+
+    if (verbose) {
+        t1 = clock();
+    }
+
+    /// calloc everything here
+    q = (double*) calloc(m, sizeof(double));
+    if (q == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+    memcpy((void*)q, (void*)query, m * sizeof(double));
+
+    qo = (double*) calloc(m, sizeof(double));
+    if (qo == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    uo = (double*) calloc(m, sizeof(double));
+    if (uo == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    lo = (double*) calloc(m, sizeof(double));
+    if (lo == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    order = (int *) calloc(m, sizeof(int));
+    if (order == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    q_tmp = (index_t *) calloc(m, sizeof(index_t));
+    if (q_tmp == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    u = (double*) calloc(m, sizeof(double));
+    if (u == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    l = (double*) calloc(m, sizeof(double));
+    if (l == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    cb = (double*) calloc(m, sizeof(double));
+    if (cb == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+    }
+
+    cb1 = (double*) calloc(m, sizeof(double));
+    if (cb1 == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    cb2 = (double*) calloc(m, sizeof(double));
+    if (cb2 == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    u_d = (double*) calloc(m, sizeof(double));
+    if (u == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    l_d = (double*) calloc(m, sizeof(double));
+    if (l == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    t = (double*) calloc(m, sizeof(double) * 2);
+    if (t == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    tz = (double*) calloc(m, sizeof(double));
+    if (tz == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    buffer = (double*) calloc(EPOCH, sizeof(double));
+    if (buffer == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    buffer_dnc = (double*) calloc(EPOCH, sizeof(double));
+    if (buffer_dnc == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    u_buff = (double*) calloc(EPOCH, sizeof(double));
+    if (u_buff == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    l_buff = (double*) calloc(EPOCH, sizeof(double));
+    if (l_buff == NULL) {
+        printf("ERROR: Memory can't be allocated!\n");
+        return -1;
+    }
+
+    /// Read query
+    best_so_far = INF;
+    ex = ex2 = 0;
+    for (i = 0; i < m; i++) {
+        d = q[i];
+        ex += d;
+        ex2 += d * d;
+    }
+    /// Do z-normalize the query, keep in same array, q
+    mean = ex / m;
+    std = ex2 / m;
+    std = sqrt(std - mean * mean);
+    for (i = 0; i < m; i++)
+        q[i] = (q[i] - mean) / std;
+
+    /// Create envelope of the query: lower envelope, l, and upper envelope, u
+    lower_upper_lemire(q, m, r, l, u);
+
+    /// Sort the query one time by abs(z-norm(q[i]))
+    for (i = 0; i < m; i++) {
+        q_tmp[i].value = q[i];
+        q_tmp[i].index = i;
+    }
+    qsort(q_tmp, m, sizeof(index_t), index_comp);
+
+    /// also create another arrays for keeping sorted envelope
+    for (i = 0; i < m; i++) {
+        int o = q_tmp[i].index;
+        order[i] = o;
+        qo[i] = q[o];
+        uo[i] = u[o];
+        lo[i] = l[o];
+    }
+
+    /// Initial the cummulative lower bound
+    for (i = 0; i < m; i++) {
+        cb[i] = 0;
+        cb1[i] = 0;
+        cb2[i] = 0;
+    }
+
+    i = 0;          /// current index of the data in current chunk of size EPOCH
+    j = 0;          /// the starting index of the data in the circular array, t
+    ex = ex2 = 0;
+    int done = 0;
+    int it = 0, ep = 0, k = 0;
+    long long I; /// the starting index of the data in current chunk of size EPOCH
+    long long data_index = 0;
+    long long dnc_index = 0;
+    while (!done) {
+        /// Read first m-1 points
+        ep = 0;
+        if (it == 0) {
+            for (k = 0; k < m - 1 && data_index < data_size; k++) {
+                buffer[k] = data[data_index++];
+                buffer_dnc[k] = dnc[dnc_index++];
+            }
+        } else {
+            for (k = 0; k < m - 1; k++){
+                buffer[k] = buffer[EPOCH - m + 1 + k];
+                buffer_dnc[k] = buffer_dnc[EPOCH - m + 1 + k];
+            }
+        }
+
+        /// Read buffer of size EPOCH or when all data has been read.
+        ep = m - 1;
+        while (ep < EPOCH && data_index < data_size) {
+            buffer[ep] = data[data_index++];
+            buffer_dnc[ep] = dnc[dnc_index++];
+            ep++;
+        }
+
+        /// Data are read in chunk of size EPOCH.
+        /// When there is nothing to read, the loop is end.
+        if (ep <= m - 1) {
+            done = 1;
+        } else {
+            lower_upper_lemire(buffer, ep, r, l_buff, u_buff);
+            /// Do main task here..
+            ex = 0;
+            ex2 = 0;
+            for (i = 0; i < ep; i += stride) {
+                // Add all the samples within the stride chunk
+                send = i + stride;
+                for (s = i; s < send; s++) {
+                    /// A bunch of data has been read and pick one of them at a time to use
+                    d = buffer[s];
+                    nc = buffer_dnc[s];
+
+                    /// Calcualte sum and sum square
+                    ex += d;
+                    ex2 += d * d;
+
+                    /// t is a circular array for keeping current data
+                    t[s % m] = d;
+
+                    /// Double the size for avoiding using modulo "%" operator
+                    t[(s % m) + m] = d;
+                }
+
+                /// Start the task when there are more than m-1 points in the current chunk
+                if (i >= m - 1) {
+
+                    // if(!nc) { // 12.8M, m=1280, dnc=95%, execution time: 5.52 seconds
+
+                    mean = ex / m;
+                    std = ex2 / m;
+                    std = sqrt(std - mean * mean);
+
+                    // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+
+                    /// compute the start location of the data in the current circular array, t
+                    j = (i + 1) % m;
+                    /// the start location of the data in the current chunk
+                    I = i - (m - 1);
+
+                    if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+
+                        /// Use a constant lower bound to prune the obvious subsequence
+                        lb_kim = lb_kim_hierarchy(t, q, j, m, mean, std, best_so_far);
+
+                        if (lb_kim < best_so_far) {
+                            /// Use a linear time lower bound to prune; z_normalization of t will be computed on the fly.
+                            /// uo, lo are envelope of the query.
+                            lb_k = lb_keogh_cumulative(order, t, uo, lo, cb1, j, m, mean, std, best_so_far);
+                            if (lb_k < best_so_far) {
+                                /// Take another linear time to compute z_normalization of t.
+                                /// Note that for better optimization, this can merge to the previous function.
+                                for (k = 0; k < m; k++) {
+                                    tz[k] = (t[(k + j)] - mean) / std;
+                                }
+
+                                /// Use another lb_keogh to prune
+                                /// qo is the sorted query. tz is unsorted z_normalized data.
+                                /// l_buff, u_buff are big envelope for all data in this chunk
+                                lb_k2 = lb_keogh_data_cumulative(order, tz, qo, cb2, l_buff + I, u_buff + I, m, mean, std, best_so_far);
+                                if (lb_k2 < best_so_far) {
+                                    /// Choose better lower bound between lb_keogh and lb_keogh2 to be used in early abandoning DTW
+                                    /// Note that cb and cb2 will be cumulative summed here.
+                                    if (lb_k > lb_k2) {
+                                        cb[m - 1] = cb1[m - 1];
+                                        for (k = m - 2; k >= 0; k--)
+                                            cb[k] = cb[k + 1] + cb1[k];
+                                    } else {
+                                        cb[m - 1] = cb2[m - 1];
+                                        for (k = m - 2; k >= 0; k--)
+                                            cb[k] = cb[k + 1] + cb2[k];
+                                    }
+
+                                    /// Compute DTW and early abandoning if possible
+                                    dist = dtw(tz, q, cb, m, r, best_so_far);
+
+                                    if (dist < best_so_far) {   /// Update best_so_far
+                                                        /// loc is the real starting location of the nearest neighbor in the file
+                                        best_so_far = dist;
+                                        loc = (it) * (EPOCH - m + 1) + i - m + 1;
+                                    }
+                                    // } // DNC
+                                } else
+                                    keogh2++;
+                            } else
+                                keogh++;
+                        } else
+                            kim++;
+                    } // DNC
+
+                    /// Reduce absolute points from sum and sum square
+                    send = j + stride;
+                    for(s = j; s < send; s++) {
+                        ex -= t[s];
+                        ex2 -= t[s] * t[s];
+                    }
+                }
+            }
+
+            /// If the size of last chunk is less then EPOCH, then no more data and terminate.
+            if (ep < EPOCH)
+                done = 1;
+            else
+                it++;
+        }
+    }
+
+    i = (it) * (EPOCH - m + 1) + ep;
+
+    free(q);
+    free(qo);
+    free(uo);
+    free(lo);
+    free(order);
+    free(q_tmp);
+    free(u);
+    free(l);
+    free(cb);
+    free(cb1);
+    free(cb2);
+    free(u_d);
+    free(l_d);
+    free(t);
+    free(tz);
+    free(buffer);
+    free(buffer_dnc);
+    free(u_buff);
+    free(l_buff);
+
+    if (verbose) {
+        t2 = clock();
+        printf("Location : %lld\n", loc);
+        printf("Distance : %.6f\n", sqrt(best_so_far));
+        printf("Data Scanned : %lld\n", i);
+        printf("Total Execution Time : %.4f secs\n", (t2 - t1) / CLOCKS_PER_SEC);
+        printf("\n");
+        printf("Pruned by LB_Kim    : %6.2f%%\n", ((double) kim / i) * 100);
+        printf("Pruned by LB_Keogh  : %6.2f%%\n", ((double) keogh / i) * 100);
+        printf("Pruned by LB_Keogh2 : %6.2f%%\n", ((double) keogh2 / i) * 100);
+        printf("DTW Calculation     : %6.2f%%\n", 100 - (((double) kim + keogh + keogh2) / i * 100));
+        printf("COMPUTE1! DNC:%d%d%d%d%d\n", dnc[0], dnc[1], dnc[2], dnc[3], dnc[4]);
+    }
+    *location = loc;
+    *distance = sqrt(best_so_far);
+    return 0;
+}
+
+/// Calculate the nearest neighbor of a times series in a larger time series expressed as location and distance,
 /// using the UCR suite optimizations. This function supports streaming the data and the query to search.
 int ucrdtwf(FILE* data_file, FILE* query_file, long query_length, double warp_width, int verbose, long long* location, double* distance) {
     FILE* fp = data_file;
