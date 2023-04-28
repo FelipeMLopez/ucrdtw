@@ -5,7 +5,7 @@ NAME      = ucrdtw
 all: bin/ucrdtw
 
 bin/ucrdtw: ucrdtw.o
-	$(CC) $(CFLAGS) ucrdtw.o -o bin/ucrdtw
+	$(CC) $(CFLAGS) ucrdtw.o -o bin/ucrdtw -lm
 
 ucrdtw.o: src/ucrdtw.c src/ucrdtw.h
 	$(CC) $(CFLAGS) -c src/ucrdtw.c 

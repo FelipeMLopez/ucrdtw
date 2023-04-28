@@ -363,7 +363,7 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
     int *order; ///new order of the query
     double *u, *l, *qo, *uo, *lo, *tz, *cb, *cb1, *cb2, *u_d, *l_d;
 
-    int compute = 0;
+    // int compute = 0;
 
     double d = 0.0;
     int nc = 0;
@@ -713,7 +713,7 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
 
 /// Calculate the nearest neighbor of a times series in a larger time series expressed as location and distance,
 /// using the UCR suite optimizations.
-int ucrdtw_stride(double* data, long long data_size, double* query, long query_size, double warp_width, int verbose, long long* location, double* distance, int* dnc, int stride) {
+int ucrdtws(double* data, long long data_size, double* query, long query_size, double warp_width, int verbose, long long* location, double* distance, int* dnc, int stride) {
     long m = query_size;
     int r = warp_width <= 1 ? floor(warp_width * m) : floor(warp_width);
 
@@ -722,7 +722,7 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
     int *order; ///new order of the query
     double *u, *l, *qo, *uo, *lo, *tz, *cb, *cb1, *cb2, *u_d, *l_d;
 
-    int compute = 0;
+    // int compute = 0;
 
     double d = 0.0;
     int nc = 0;
@@ -916,7 +916,7 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
                 buffer_dnc[k] = dnc[dnc_index++];
             }
         } else {
-            for (k = 0; k < m - 1; k++){
+            for (k = 0; k < m - 1; k++) {
                 buffer[k] = buffer[EPOCH - m + 1 + k];
                 buffer_dnc[k] = buffer_dnc[EPOCH - m + 1 + k];
             }
@@ -943,36 +943,34 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
                 // Add all the samples within the stride chunk
                 send = i + stride;
                 for (s = i; s < send; s++) {
-                    /// A bunch of data has been read and pick one of them at a time to use
+                /// A bunch of data has been read and pick one of them at a time to use
                     d = buffer[s];
 
-                    /// Calcualte sum and sum square
-                    ex += d;
-                    ex2 += d * d;
+                /// Calcualte sum and sum square
+                ex += d;
+                ex2 += d * d;
 
-                    /// t is a circular array for keeping current data
+                /// t is a circular array for keeping current data
                     t[s % m] = d;
 
-                    /// Double the size for avoiding using modulo "%" operator
+                /// Double the size for avoiding using modulo "%" operator
                     t[(s % m) + m] = d;
                 }
 
                 /// Start the task when there are more than m-1 points in the current chunk
                 if (i >= m - 1) {
-                    
+
                     // find it we need to compute this epoch
                     nc = buffer_dnc[i];
 
                     /// compute the start location of the data in the current circular array, t
                     j = (i + stride) % m;
 
-                    if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
+                    if(!nc) {
 
                         mean = ex / m;
                         std = ex2 / m;
                         std = sqrt(std - mean * mean);
-
-                        // if(!nc) { // 12.8M, m=1280, dnc=90%, execution time: 9.32 seconds
 
                         /// the start location of the data in the current chunk
                         I = i - (m - 1);
@@ -1016,7 +1014,6 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
                                         best_so_far = dist;
                                         loc = (it) * (EPOCH - m + 1) + i - m + 1;
                                     }
-                                    // } // DNC
                                 } else
                                     keogh2++;
                             } else
@@ -1026,11 +1023,8 @@ int ucrdtw_stride(double* data, long long data_size, double* query, long query_s
                     } // DNC
 
                     /// Reduce absolute points from sum and sum square
-                    send = j + stride;
-                    for(s = j; s < send; s++) {
-                        ex -= t[s];
-                        ex2 -= t[s] * t[s];
-                    }
+                    ex -= t[j];
+                    ex2 -= t[j] * t[j];
                 }
             }
 
@@ -1425,27 +1419,111 @@ int ucrdtwf(FILE* data_file, FILE* query_file, long query_length, double warp_wi
     return 0;
 }
 
+// int main(int argc, char** argv) {
+
+//     if (argc < 5) {
+//         printf("Error: Invalid arguments\n");
+//         printf("Command usage: dtwfind <data-file>  <query-file> <query-length> <warp-width>\n\n");
+//         printf("For example: dtwfind data.txt query.txt 128 0.05\n");
+//         return -2;
+//     }
+
+//     FILE* data_file = fopen(argv[1], "r");
+//     if (data_file == NULL) {
+//         printf("ERROR: File not found: %s\n", argv[1]);
+//     }
+
+//     FILE* query_file = fopen(argv[2], "r");
+//     if (query_file == NULL) {
+//         printf("ERROR: File not found: %s\n", argv[2]);
+//     }
+
+//     long long location = -1;
+//     double distance = -1;
+//     int ret = ucrdtwf(data_file, query_file, atoll(argv[3]), atof(argv[4]), 1, &location, &distance);
+//     printf("Location: %lld\nDistance: %.6f\n", location, distance);
+//     return ret;
+// }
+
 int main(int argc, char** argv) {
-    if (argc < 5) {
+    if (argc < 4) {
         printf("Error: Invalid arguments\n");
-        printf("Command usage: dtwfind <data-file>  <query-file> <query-length> <warp-width>\n\n");
-        printf("For example: dtwfind data.txt query.txt 128 0.05\n");
+        printf("Command usage: dtwfind <data-file> <query-length> <warp-width>\n\n");
+        printf("For example: dtwfind data.txt 128 0.05\n");
         return -2;
     }
 
-    FILE* data_file = fopen(argv[1], "r");
+
+    // Read data from CSV file
+    FILE *data_file = fopen(argv[1], "r");
     if (data_file == NULL) {
-        printf("ERROR: File not found: %s\n", argv[1]);
+        printf("Error: Could not open data file\n");
+        return -1;
     }
 
-    FILE* query_file = fopen(argv[2], "r");
-    if (query_file == NULL) {
-        printf("ERROR: File not found: %s\n", argv[2]);
+    // Count the number of samples in the data file
+    int num_samples = 0;
+    char ch;
+    while ((ch = fgetc(data_file)) != EOF) {
+        if (ch == '\n') {
+            num_samples++;
+        }
+    }
+    rewind(data_file);
+
+    // Allocate memory for the data array
+    double *data = malloc(num_samples * sizeof(double));
+    if (data == NULL) {
+        printf("Error: Could not allocate memory for data array\n");
+        return -1;
     }
 
+    // Read the data from the file into the data array
+    for (int i = 0; i < num_samples; i++) {
+        fscanf(data_file, "%lf", &data[i]);
+    }
+    fclose(data_file);
+
+    // Generate a random query of the specified length from the data
+    int query_length = atoi(argv[3]);
+    double *query = malloc(query_length * sizeof(double));
+    if (query == NULL) {
+        printf("Error: Could not allocate memory for query array\n");
+        return -1;
+    }
+
+    srand(0);
+    for (int i = 0; i < query_length; i++) {
+        int index = rand() % num_samples;
+        query[i] = data[index];
+    }
+
+    // Create a random dnc vector with the same size as the data
+    int *dnc = malloc(num_samples * sizeof(int));
+    if (dnc == NULL) {
+        printf("Error: Could not allocate memory for dnc array\n");
+        return -1;
+    }
+
+    for (int i = 0; i < num_samples; i++) {
+        dnc[i] = rand() % 100 < 95;
+    }
+
+    printf("Data length: %d\n", num_samples);
+    printf("Query length: %d\n", query_length);
+    printf("Warp width: %f\n", atof(argv[3]));
+    printf("DNC length: %d\n", num_samples);
+    printf("Starting DTW...\n");
     long long location = -1;
     double distance = -1;
-    int ret = ucrdtwf(data_file, query_file, atoll(argv[3]), atof(argv[4]), 1, &location, &distance);
+    int verbose = 0;
+    int stride = 1;
+    int ret = ucrdtws(data, num_samples, query, atoll(argv[2]), atof(argv[3]), verbose, &location, &distance, dnc, stride);
     printf("Location: %lld\nDistance: %.6f\n", location, distance);
+
+    free(data);
+    free(query);
+    free(dnc);
+
     return ret;
 }

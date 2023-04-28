@@ -11,9 +11,14 @@ static char ucrdtw_docstring[] = "Calculate the nearest neighbor of a times seri
 
 /* Available functions */
 static PyObject* ucrdtw_ucrdtw(PyObject *self, PyObject *args);
+static PyObject* ucrdtw_ucrdtws(PyObject *self, PyObject *args);
 
 /* Module specification */
-static PyMethodDef module_methods[] = { { "ucrdtw", ucrdtw_ucrdtw, METH_VARARGS, ucrdtw_docstring }, { NULL, NULL, 0, NULL } };
+static PyMethodDef module_methods[] = { 
+    { "ucrdtw", ucrdtw_ucrdtw, METH_VARARGS, ucrdtw_docstring }, 
+    { "ucrdtws", ucrdtw_ucrdtws, METH_VARARGS, ucrdtw_docstring }, 
+    { NULL, NULL, 0, NULL } 
+};
 
 /* Initialize the module */
 #if PY_MAJOR_VERSION >= 3
@@ -123,6 +128,100 @@ static PyObject* ucrdtw_ucrdtw(PyObject* self, PyObject* args) {
     long long location = -1;
     double distance = -1;
     int status = ucrdtw(data, data_size, query, query_size, warp_width, verbose, &location, &distance, dnc);
+
+    /* Clean up. */
+    Py_XDECREF(data_array);
+    Py_XDECREF(query_array);
+    Py_XDECREF(dnc_array);
+
+    if (status) {
+        PyErr_SetString(PyExc_RuntimeError, "ucrdtw could not allocate memory");
+        return NULL;
+    }
+
+    /* Build the output tuple */
+    PyObject* ret = Py_BuildValue("Ld", location, distance);
+    return ret;
+}
+
+/*
+Calculate the nearest neighbor of a times series in a larger time series expressed as location and distance,
+using the UCR suite optimizations.
+
+Arguments:
+data - a list of floats or an ndarray for the time series to process
+query - a list of floats or an ndarray for the time series to search for
+warp_width - Allowed warp width as a fraction of query size
+verbose - Optional boolean to print stats
+*/
+static PyObject* ucrdtw_ucrdtws(PyObject* self, PyObject* args) {
+    PyObject* data_obj = NULL;
+    PyObject* query_obj = NULL;
+    PyObject* dnc_obj = NULL;
+    double warp_width = -1;
+    PyObject* verbose_obj = NULL;
+    int stride = 0;
+
+    /* Parse the input tuple */
+    if (!PyArg_ParseTuple(args, "OOd|OOi", &data_obj, &query_obj, &warp_width, &verbose_obj, &dnc_obj, &stride)) {
+        return NULL;
+    }
+
+    /* Interpret the input objects as numpy arrays. */
+    if (!PyList_Check(data_obj) && !PyArray_Check(data_obj)) {
+        PyErr_SetString(PyExc_TypeError, "Data argument must be a list or ndarray");
+        return NULL;
+    }
+    PyArrayObject* data_array = (PyArrayObject*)PyArray_FROM_OTF(data_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (data_array == NULL) {
+        Py_XDECREF(data_array);
+        PyErr_SetString(PyExc_TypeError, "Data argument must be a list or ndarray");
+        return NULL;
+    }
+
+    if (!PyList_Check(query_obj) && !PyArray_Check(query_obj)) {
+        Py_XDECREF(data_array);
+        PyErr_SetString(PyExc_TypeError, "Query argument must be a list or ndarray");
+        return NULL;
+    }
+    PyArrayObject* query_array = (PyArrayObject*)PyArray_FROM_OTF(query_obj, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    if (query_array == NULL) {
+        Py_XDECREF(data_array);
+        Py_XDECREF(query_array);
+        PyErr_SetString(PyExc_TypeError, "Query argument must be a list or ndarray");
+        return NULL;
+    }
+
+    if (!PyList_Check(dnc_obj) && !PyArray_Check(dnc_obj)) {
+        Py_XDECREF(data_array);
+        Py_XDECREF(query_array);
+        PyErr_SetString(PyExc_TypeError, "DNC argument must be a list or ndarray");
+        return NULL;
+    }
+    PyArrayObject* dnc_array = (PyArrayObject*)PyArray_FROM_OTF(dnc_obj, NPY_INT, NPY_ARRAY_IN_ARRAY);
+    if (dnc_array == NULL) {
+        Py_XDECREF(data_array);
+        Py_XDECREF(query_array);
+        Py_XDECREF(dnc_array);
+        PyErr_SetString(PyExc_TypeError, "DNC argument must be a list or ndarray");
+        return NULL;
+    }
+
+    /* Get pointers to the data as C-types. */
+    double* data = (double*) PyArray_DATA(data_array);
+    int data_size = (long) PyArray_DIM(data_array, 0);
+
+    double* query = (double*) PyArray_DATA(query_array);
+    int query_size = (int) PyArray_DIM(query_array, 0);
+
+    int verbose = verbose_obj != NULL ? PyObject_IsTrue(verbose_obj) : 0;
+
+    int* dnc = (int*) PyArray_DATA(dnc_array);
+
+    /* Call the external C function to compute the best DTW location and distance. */
+    long long location = -1;
+    double distance = -1;
+    int status = ucrdtws(data, data_size, query, query_size, warp_width, verbose, &location, &distance, dnc, stride);
 
     /* Clean up. */
     Py_XDECREF(data_array);
