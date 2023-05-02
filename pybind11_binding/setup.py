@@ -6,14 +6,14 @@ cpp_args = ['-std=c++17', '-O3']
 
 ext_modules = [
     Pybind11Extension(
-        "ucrdtw",
+        "ucrdtwbind",
         sorted(glob("*.cpp")),  # Sort source files for reproducibility
         extra_compile_args = cpp_args,
     ),
 ]
 
 setup(
-    name='ucrdtw',
+    name='ucrdtwbind',
     version='0.0.1',
     author='Rafael Asenjo',
     author_email='asenjo@uma.es',

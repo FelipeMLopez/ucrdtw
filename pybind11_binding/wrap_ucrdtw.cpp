@@ -49,7 +49,7 @@ std::pair<int64_t,double> wrap_ucrdtws (const py::array_t<double> &data, const p
     return std::make_pair(location, distance);
 }
 
-PYBIND11_MODULE(ucrdtw, m) {
+PYBIND11_MODULE(ucrdtwbind, m) {
     m.doc() = "UCR DTW module";
 
     m.def("ucrdtw", &wrap_ucrdtw, "A function which computes the UCR DTW distance between two time series",
