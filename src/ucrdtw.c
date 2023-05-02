@@ -363,8 +363,6 @@ int ucrdtw(double* data, long long data_size, double* query, long query_size, do
     int *order; ///new order of the query
     double *u, *l, *qo, *uo, *lo, *tz, *cb, *cb1, *cb2, *u_d, *l_d;
 
-    // int compute = 0;
-
     double d = 0.0;
     int nc = 0;
     long long i, j;
@@ -722,8 +720,6 @@ int ucrdtws(double* data, long long data_size, double* query, long query_size, d
     int *order; ///new order of the query
     double *u, *l, *qo, *uo, *lo, *tz, *cb, *cb1, *cb2, *u_d, *l_d;
 
-    // int compute = 0;
-
     double d = 0.0;
     int nc = 0;
     long long i, j, s, send;
@@ -943,23 +939,23 @@ int ucrdtws(double* data, long long data_size, double* query, long query_size, d
                 // Add all the samples within the stride chunk
                 send = i + stride;
                 for (s = i; s < send; s++) {
-                /// A bunch of data has been read and pick one of them at a time to use
+                    /// A bunch of data has been read and pick one of them at a time to use
                     d = buffer[s];
 
-                /// Calcualte sum and sum square
-                ex += d;
-                ex2 += d * d;
+                    /// Calcualte sum and sum square
+                    ex += d;
+                    ex2 += d * d;
 
-                /// t is a circular array for keeping current data
+                    /// t is a circular array for keeping current data
                     t[s % m] = d;
 
-                /// Double the size for avoiding using modulo "%" operator
+                    /// Double the size for avoiding using modulo "%" operator
                     t[(s % m) + m] = d;
                 }
 
                 /// Start the task when there are more than m-1 points in the current chunk
                 if (i >= m - 1) {
-
+                    
                     // find it we need to compute this epoch
                     nc = buffer_dnc[i];
 
@@ -1023,8 +1019,11 @@ int ucrdtws(double* data, long long data_size, double* query, long query_size, d
                     } // DNC
 
                     /// Reduce absolute points from sum and sum square
-                    ex -= t[j];
-                    ex2 -= t[j] * t[j];
+                    send = j + stride;
+                    for(s = j; s < send; s++) {
+                        ex -= t[s];
+                        ex2 -= t[s] * t[s];
+                    }
                 }
             }
 
